@@ -1,0 +1,85 @@
+#!/bin/sh
+
+# Overcast.fm Podcast Downloader
+
+# URL decode function using sed (POSIX compatible)
+url_decode() {
+    printf '%s' "$1" | sed 's/%2F/\//g; s/%3A/:/g; s/%2D/-/g; s/%2E/./g; s/%20/ /g'
+}
+
+download_podcast() {
+    overcast_url="$1"
+
+    if [ -z "$overcast_url" ]; then
+        printf "Error: Please provide an Overcast.fm URL\n" >&2
+        return 1
+    fi
+
+    # Validate URL format
+    case "$overcast_url" in
+        https://overcast.fm/*) ;;
+        *)
+            printf "Error: Invalid URL. Must be an overcast.fm URL\n" >&2
+            return 1
+            ;;
+    esac
+
+    printf "Fetching page: %s\n" "$overcast_url"
+
+    # Fetch the page
+    if ! html=$(curl -s "$overcast_url") || [ -z "$html" ]; then
+        printf "Error: Failed to fetch the Overcast.fm page\n" >&2
+        return 1
+    fi
+
+    printf "Successfully fetched page (%d characters)\n" "$(printf '%s' "$html" | wc -c)"
+
+    # Extract the encoded CloudFront URL
+    encoded_url=$(printf '%s' "$html" | grep -o 'd3ctxlq1ktw2nl\.cloudfront\.net[^"[:space:]]*\.\(mp3\|mp4\|m4a\)' | head -1)
+
+    if [ -z "$encoded_url" ]; then
+        printf "Error: Could not find media URL in the page\n" >&2
+        return 1
+    fi
+
+    printf "Found encoded media URL: %s\n" "$encoded_url"
+
+    # Add https:// prefix and decode the URL
+    media_url=$(url_decode "https://$encoded_url")
+
+    printf "Decoded media URL: %s\n" "$media_url"
+
+    # Generate filename from URL
+    filename=$(printf '%s' "$media_url" | sed 's|.*/||')
+
+    # Use a tmp directory for download
+    tmp_dir="${TMPDIR:-/tmp}"
+    full_path="$tmp_dir/$filename"
+
+    # Check if file already exists
+    if [ -f "$full_path" ]; then
+        printf "File already exists: %s\n" "$full_path"
+    else
+        printf "Downloading to: %s\n" "$full_path"
+
+        # Download the media file
+        if curl -L -o "$full_path" --progress-bar "$media_url"; then
+            printf "Download completed: %s\n" "$full_path"
+        else
+            printf "Error: Download failed\n" >&2
+            return 1
+        fi
+    fi
+
+    # Run whisper on the downloaded file
+    printf "Running whisper transcription...\n"
+    whisper "$full_path"
+}
+
+# Main execution
+if [ $# -eq 0 ]; then
+    printf "Usage: %s <overcast_url>\n" "$0"
+    exit 1
+fi
+
+download_podcast "$1"
