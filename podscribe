@@ -34,23 +34,18 @@ download_podcast() {
 
     printf "Successfully fetched page (%d characters)\n" "$(printf '%s' "$html" | wc -c)"
 
-    # Extract the media URL (try Omny.fm first, then fall back to CloudFront)
-    encoded_url=$(printf '%s' "$html" | grep -o 'traffic\.omny\.fm[^"[:space:]]*\.\(mp3\|mp4\|m4a\)' | head -1)
+    # Extract the media URL - look for full https:// URLs ending in audio extensions
+    media_url=$(printf '%s' "$html" | grep -o 'https://[^"[:space:]]*\.\(mp3\|mp4\|m4a\)' | head -1)
 
-    # Fall back to CloudFront if Omny.fm URL not found
-    if [ -z "$encoded_url" ]; then
-        encoded_url=$(printf '%s' "$html" | grep -o 'd3ctxlq1ktw2nl\.cloudfront\.net[^"[:space:]]*\.\(mp3\|mp4\|m4a\)' | head -1)
-    fi
-
-    if [ -z "$encoded_url" ]; then
+    if [ -z "$media_url" ]; then
         printf "Error: Could not find media URL in the page\n" >&2
         return 1
     fi
 
-    printf "Found encoded media URL: %s\n" "$encoded_url"
+    printf "Found media URL: %s\n" "$media_url"
 
-    # Add https:// prefix and decode the URL
-    media_url=$(url_decode "https://$encoded_url")
+    # Decode the URL
+    media_url=$(url_decode "$media_url")
 
     printf "Decoded media URL: %s\n" "$media_url"
 
